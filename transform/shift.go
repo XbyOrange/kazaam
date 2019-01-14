@@ -1,7 +1,10 @@
 package transform
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // Shift moves values from one provided json path to another in raw []byte.
@@ -41,35 +44,89 @@ func Shift(spec *Config, data []byte) ([]byte, error) {
 		// Currently we iterate at worst once per key in spec, with a better design it would be once
 		// per spec.
 		for _, v := range keyList {
-			var dataForV []byte
-			var err error
 
-			// grab the data
-			if v == "$" {
-				dataForV = data
+			//Special case, N:N array copy, can't be handled by normal value insertion, we need to create  a lot of manual insertions like [0]:[0] [1]:[1],...
+			if strings.Contains(v, "[*]") && strings.Count(v, "[*]") == strings.Count(k, "[*]") {
+				//now in recursive way  we use the length for each N to replace it and do copy
+				outData, _ = insertArrayDataRecursively("", strings.Split(v, "."), 0, v, k, data, spec, array, outData)
+
 			} else {
-				dataForV, err = getJSONRaw(data, v, spec.Require)
-				if err != nil {
-					return nil, err
-				}
+				return insertShiftData(v, k, data, spec, array, outData)
+
 			}
 
-			// if array flag set, encapsulate data
-			if array {
-				// bookend() is destructive to underlying slice, need to copy.
-				// extra capacity saves an allocation and copy during bookend.
-				tmp := make([]byte, len(dataForV), len(dataForV)+2)
-				copy(tmp, dataForV)
-				dataForV = bookend(tmp, '[', ']')
-			}
-			// Note: following pattern from current Shift() - if multiple elements are included in an array,
-			// they will each successively overwrite each other and only the last element will be included
-			// in the transformed data.
-			outData, err = setJSONRaw(outData, dataForV, k)
-			if err != nil {
-				return nil, err
-			}
 		}
 	}
 	return outData, nil
+}
+
+func insertArrayDataRecursively(lookPath string, replacementArray []string, level int, v, k string, data []byte, spec *Config, array bool, outData []byte) ([]byte, error) {
+
+	var err error
+	originalK := k
+	originalV := v
+
+	if level != 0 {
+		lookPath += "."
+	}
+	lookPath += replacementArray[level]
+	var tempArray []interface{}
+	rawTempJson, err := getJSONRaw(data, lookPath, false)
+	if err != nil {
+		return nil, err
+	}
+	json.Unmarshal(rawTempJson, &tempArray)
+	totalToIterate := len(tempArray)
+
+	if totalToIterate == 0 && level < (len(replacementArray)-1) {
+		//goto next level directly
+		outData, _ = insertArrayDataRecursively(lookPath, replacementArray, level+1, v, k, data, spec, array, outData)
+	}
+
+	for i := 0; i < totalToIterate; i++ {
+		k = strings.Replace(originalK, "[*]", "["+strconv.Itoa(i)+"]", 1)
+		v = strings.Replace(originalV, "[*]", "["+strconv.Itoa(i)+"]", 1)
+		if level == (len(replacementArray)-1) || !strings.Contains(v, "[*]") {
+			outData, err = insertShiftData(v, k, data, spec, array, outData)
+		} else {
+			nextLevelLookPath := strings.Replace(lookPath, "[*]", "["+strconv.Itoa(i)+"]", 1)
+			outData, err = insertArrayDataRecursively(nextLevelLookPath, replacementArray, level+1, v, k, data, spec, array, outData)
+		}
+	}
+	return outData, err
+
+}
+
+func insertShiftData(v, k string, data []byte, spec *Config, array bool, outData []byte) ([]byte, error) {
+
+	var dataForV []byte
+	var err error
+
+	// grab the data
+	if v == "$" {
+		dataForV = data
+	} else {
+		dataForV, err = getJSONRaw(data, v, spec.Require)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// if array flag set, encapsulate data
+	if array {
+		// bookend() is destructive to underlying slice, need to copy.
+		// extra capacity saves an allocation and copy during bookend.
+		tmp := make([]byte, len(dataForV), len(dataForV)+2)
+		copy(tmp, dataForV)
+		dataForV = bookend(tmp, '[', ']')
+	}
+	// Note: following pattern from current Shift() - if multiple elements are included in an array,
+	// they will each successively overwrite each other and only the last element will be included
+	// in the transformed data.
+	outData, err = setJSONRaw(outData, dataForV, k)
+	if err != nil {
+		return nil, err
+	}
+	return outData, nil
+
 }

@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/XbyOrange/kazaam/transform"
 	"github.com/qntfy/jsonparser"
-	"github.com/qntfy/kazaam/transform"
 )
 
 // TransformFunc defines the contract that any Transform function implementation

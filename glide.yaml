@@ -1,4 +1,4 @@
-package: github.com/qntfy/kazaam
+package: github.com/XbyOrange/kazaam
 import:
 - package: github.com/qntfy/jsonparser
   version: ^1.0.2
