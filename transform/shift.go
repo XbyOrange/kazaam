@@ -51,7 +51,7 @@ func Shift(spec *Config, data []byte) ([]byte, error) {
 				outData, _ = insertArrayDataRecursively("", strings.Split(v, "."), 0, v, k, data, spec, array, outData)
 
 			} else {
-				return insertShiftData(v, k, data, spec, array, outData)
+				outData, _ = insertShiftData(v, k, data, spec, array, outData)
 
 			}
 
